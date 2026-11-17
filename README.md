@@ -137,4 +137,4 @@ This repository contains **no patient data**. All screenshots were taken against
 [MIT](LICENSE)
 
 [OpenSeadragon]: https://openseadragon.github.io/
-[Releases]: https://github.com/TTDiang2/tt-slideviewer/releases
+[Releases]: https://github.com/TTDiang2/TT_SlideViewer/releases
