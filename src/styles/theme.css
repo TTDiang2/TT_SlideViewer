@@ -1,0 +1,328 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Dual-theme token set.
+ * `:root` carries the light palette; `[data-theme="dark"]` overrides with the
+ * dark palette. index.html sets data-theme before React boots so there is no
+ * flash of wrong theme. Unknown/absent value falls back to light.
+ */
+:root {
+  --bg-base: #f4f4f2; /* window底 */
+  --bg-panel: #ffffff; /* 面板/工具栏 */
+  --bg-elevated: #ffffff; /* 弹层 */
+  --bg-hover: #ececea; /* hover面 */
+  --border-subtle: rgba(24, 24, 27, 0.09);
+  --border-strong: rgba(24, 24, 27, 0.2);
+  --text-primary: #1b1b1e;
+  --text-secondary: #5c5c63;
+  --text-tertiary: #8f8f98;
+  --accent: #a8861b; /* 金（浅色下加深保证对比） */
+  --accent-hover: #8f7114;
+  --accent-dim: rgba(168, 134, 27, 0.12);
+  --accent-contrast: #ffffff; /* 叠在accent上的文字 */
+  --danger: #c93b3a;
+  --radius-window: 12px;
+  --radius-ctl: 8px;
+  --titlebar-h: 36px;
+  --statusbar-h: 26px;
+
+  /* viewer canvas */
+  --viewer-bg: #e9e9e5; /* 画布空白区 */
+  --viewer-missing: #dededa; /* 缺片占位 */
+  --viewer-label-bg: rgba(255, 255, 255, 0.92);
+  --viewer-label-border: rgba(24, 24, 27, 0.16);
+  --viewer-label-ink: #1b1b1e;
+
+  /* window drop shadow: near-tight layers that fully fit inside the 12px
+     padding, so the shadow reads as depth instead of a clipped halo */
+  --win-shadow:
+    0 0 0 1px rgba(24, 24, 27, 0.05), 0 1px 2px rgba(24, 24, 27, 0.1),
+    0 4px 10px rgba(24, 24, 27, 0.08), 0 12px 28px rgba(24, 24, 27, 0.12);
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --bg-base: #0e0e10;
+  --bg-panel: #17171a;
+  --bg-elevated: #1f1f23;
+  --bg-hover: #26262b;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --text-primary: #ededef;
+  --text-secondary: #9a9aa0;
+  --text-tertiary: #6b6b72;
+  --accent: #c9a227;
+  --accent-hover: #dcb43a;
+  --accent-dim: rgba(201, 162, 39, 0.14);
+  --accent-contrast: #141416;
+  --danger: #e24b4a;
+  --viewer-bg: #0e0e10;
+  --viewer-missing: #1f1f23;
+  --viewer-label-bg: rgba(14, 14, 16, 0.86);
+  --viewer-label-border: rgba(255, 255, 255, 0.12);
+  --viewer-label-ink: #ededef;
+  --win-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.4),
+    0 6px 16px rgba(0, 0, 0, 0.35), 0 16px 40px rgba(0, 0, 0, 0.42);
+  color-scheme: dark;
+}
+
+@layer base {
+  * {
+    border-color: var(--border-subtle);
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: transparent;
+  }
+  body {
+    font-family: Inter, "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    user-select: none;
+    cursor: default;
+  }
+  input,
+  textarea {
+    user-select: text;
+  }
+  ::selection {
+    background: var(--accent-dim);
+    color: var(--text-primary);
+  }
+  :focus-visible {
+    outline: none;
+  }
+  button {
+    font-family: inherit;
+  }
+}
+
+@layer utilities {
+  .focus-ring:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+  .tabnum {
+    font-variant-numeric: tabular-nums;
+  }
+  /* floating dialogs/menus: theme-aware elevation */
+  .float-shadow {
+    box-shadow: var(--win-shadow);
+  }
+}
+
+/* ---------- window shell ----------
+ * Custom component styles live in @layer components so tailwind utilities
+ * (positioning, spacing…) always win — unlayered CSS would silently
+ * override them and collapse layouts (that is exactly the class of bug
+ * that shrank the viewer canvas to 0px before). */
+@layer components {
+  .win-shell {
+    position: fixed;
+    inset: 0;
+    padding: 12px;
+    background: transparent;
+    transition: padding 120ms ease-out;
+  }
+  .win-shell.maximized {
+    padding: 0;
+  }
+  .win-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    border-radius: var(--radius-window);
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-base);
+    box-shadow: var(--win-shadow);
+  }
+  .win-shell.maximized .win-card {
+    border-radius: 0;
+    border-color: transparent;
+    box-shadow: none;
+  }
+}
+
+/* ---------- scrollbars ---------- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ---------- resize hotzones ---------- */
+@layer components {
+  .rz {
+    position: absolute;
+    z-index: 60;
+  }
+  .rz-n,
+  .rz-s {
+    left: 10px;
+    right: 10px;
+    height: 6px;
+    cursor: ns-resize;
+  }
+  .rz-n {
+    top: 0;
+  }
+  .rz-s {
+    bottom: 0;
+  }
+  .rz-e,
+  .rz-w {
+    top: 10px;
+    bottom: 10px;
+    width: 6px;
+    cursor: ew-resize;
+  }
+  .rz-e {
+    right: 0;
+  }
+  .rz-w {
+    left: 0;
+  }
+  .rz-ne,
+  .rz-nw,
+  .rz-se,
+  .rz-sw {
+    width: 10px;
+    height: 10px;
+  }
+  .rz-ne {
+    top: 0;
+    right: 0;
+    cursor: nesw-resize;
+  }
+  .rz-nw {
+    top: 0;
+    left: 0;
+    cursor: nwse-resize;
+  }
+  .rz-se {
+    bottom: 0;
+    right: 0;
+    cursor: nwse-resize;
+  }
+  .rz-sw {
+    bottom: 0;
+    left: 0;
+    cursor: nesw-resize;
+  }
+}
+
+/* ---------- viewer ---------- */
+@layer components {
+  .viewer-surface {
+    overflow: hidden;
+    background: var(--viewer-bg);
+    touch-action: none;
+  }
+  .viewer-surface canvas {
+    position: absolute;
+    inset: 0;
+    display: block;
+  }
+
+  .toolbar-float {
+    background: color-mix(in srgb, var(--bg-panel) 82%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.16);
+  }
+  [data-theme="dark"] .toolbar-float {
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  }
+
+  .slide-row {
+    transition: background 120ms ease-out, border-color 120ms ease-out;
+  }
+  .slide-row:hover {
+    background: var(--bg-hover);
+  }
+  .slide-row.active {
+    background: var(--accent-dim);
+    border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+  }
+}
+
+/* easyui components use a couple of shadcn-ish tokens */
+:root {
+  --surface: var(--bg-elevated);
+  --surface-hover: var(--bg-hover);
+  --surface-raised: var(--bg-panel);
+  --border: var(--border-subtle);
+  --border-hover: var(--border-strong);
+  --bg: var(--bg-base);
+  /* easyui aliases */
+  --text-muted: var(--text-tertiary);
+  --text-subtle: var(--text-tertiary);
+  --shadow-elevated:
+    0 0 0 1px rgba(24, 24, 27, 0.04), 0 2px 6px rgba(24, 24, 27, 0.08),
+    0 10px 28px rgba(24, 24, 27, 0.14);
+  /* skeleton shimmer sheen */
+  --sk: rgb(24 24 27 / 0.06);
+}
+
+[data-theme="dark"] {
+  --shadow-elevated:
+    0 0 0 1px rgba(255, 255, 255, 0.05), 0 2px 6px rgba(0, 0, 0, 0.4),
+    0 12px 32px rgba(0, 0, 0, 0.5);
+  --sk: rgb(255 255 255 / 0.65);
+}
+
+/* keep easyui's focus/hover from glowing */
+.shadow-xs,
+.shadow-sm,
+.shadow-md,
+.shadow-lg {
+  box-shadow: none !important;
+}
+
+.slide-row {
+  transition: background 120ms ease-out, border-color 120ms ease-out;
+}
+.slide-row:hover {
+  background: var(--bg-hover);
+}
+.slide-row.active {
+  background: var(--accent-dim);
+  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+}
