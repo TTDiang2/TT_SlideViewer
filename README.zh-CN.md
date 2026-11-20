@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-MIRAX（3DHISTECH Pannoramic）口腔病理切片的 Windows 桌面查看器。针对原始 `.dat` 瓦片数据（`.mrxs` 已损坏，见 3.2 节）直接解析 Index.dat、按坐标流式渲染 JPEG 瓦片，支持 9 级金字塔缩放、µm 级测距、标注持久化与 PNG 导出。
+MIRAX（3DHISTECH Pannoramic）口腔病理切片的 Windows 桌面查看器。针对原始 `.dat` 瓦片数据（`.mrxs` 已损坏，见 3.2 节）直接解析 Index.dat、按坐标流式渲染 JPEG 瓦片，支持 9 级金字塔缩放、相机照片重叠带的自动接缝校正、µm 级测距、标注持久化与 PNG 导出。
 
 技术栈：Tauri v2 + React 19 + TypeScript + Vite 5 + Tailwind CSS + easyui（shadcn registry）+ Canvas 2D 自绘渲染器。**不引入 Python / 本地 HTTP 服务 / sidecar 进程**（硬性架构约束，见第 4 章）。
 
@@ -10,9 +10,9 @@ MIRAX（3DHISTECH Pannoramic）口腔病理切片的 Windows 桌面查看器。�
 |---|---|---|
 | ![切片库](docs/screenshots/01-slide-library.png) | ![深度放大](docs/screenshots/03-deep-zoom-nuclei.png) | ![深色主题](docs/screenshots/10-dark-theme.png) |
 
-| 测距 | 标注 | 双联对比 |
+| 设置与画质 | 标注 | 双联对比 |
 |---|---|---|
-| ![测距](docs/screenshots/04-measure.png) | ![标注](docs/screenshots/07-annotations-done.png) | ![双联对比](docs/screenshots/09-dual-pane.png) |
+| ![设置](docs/screenshots/08-settings.png) | ![标注](docs/screenshots/07-annotations-done.png) | ![双联对比](docs/screenshots/09-dual-pane.png) |
 
 > **安装包仅 1.5 MB。** 无后端进程、无本地端口、关窗即完全退出。
 
@@ -25,7 +25,7 @@ MIRAX（3DHISTECH Pannoramic）口腔病理切片的 Windows 桌面查看器。�
 ```bash
 npm install          # 安装前端依赖
 npm run tauri dev    # 开发模式（Vite 热更新 + Rust 增量编译）
-npm run tauri build  # 打包
+npm run release      # 打包（先升补丁号，源码 / crate / 安装包三处版本一致）
 ```
 
 打包产物（NSIS 安装器，`currentUser` 模式免 UAC，双击即装）：
@@ -136,6 +136,29 @@ y = t / 296        // 不是"本层列数"，绝不能换成 max(x)+1
 
 0 层约 **42.7 亿像素**（36360 × 117392），未压缩 RGB 约 **12.8 GB**——任何"先拼全景大图再显示"的做法都会内存爆炸。正确做法：瓦片本就是现成 JPEG，按视口所需坐标范围取出原样透传给前端流式渲染。同理，本应用明确不做全片拼接导出。
 
+### 3.5 相机照片重叠与接缝校正（1.2.12 起）
+
+- `Slidedat.ini` 的 `CameraImageDivisionsPerSide = 8`：一张相机照片 = 8×8 块瓦片。
+- `IMAGE_OVERLAP_MICROMETERS_X/Y = 0`：保存后的瓦片本身不重叠；重叠只发生在
+  **相邻照片之间**，实测约 126–137 个 L0 像素（≈35 µm）。
+- 边界全部落在 `(index + 1) % 8 == 0`；
+  `COMPRESSED_STITCHING_ORIG_CAMERA_TILE_OVERLAP_X/Y = 144` 是相机"想去的位置"，
+  不是实际位置——这正是按等距网格摆瓦片会看到重复带的原因。
+
+**流程**：打开切片先出图，后台 2–5 s 只测这些照片边界（`seam_detect`），结果按
+**L0 单一表**存进 `%APPDATA%\com.tt.slideviewer\seams.json`；状态栏 chip 显示
+「分析中 / 已校正 N 处 / 关」。几何未确定前测距禁用（跨缝会多约 36 µm 且看不出来）。
+
+**渲染**：每条边界换算成当前层的精确浮点位置 `b = (k0+1)·tileSize / 2^level`，
+每块瓦片拆成若干 `{s0,s1,d0,d1}` 段，跳过重复带且相邻段目的坐标严格相接。
+L4 一块瓦片含 2 条边界切 2 段、L5 含 4 条切 4 段，因此 L4/L5 不漏裁、L3↔L4 不跳。
+**不要**把照片之间的横向位移硬塞成单块瓦片的位置偏移——那会在垂直方向的瓦片
+网格上挖出空隙（1.2.9 的两条横向裂缝即由此而来，已撤销）。
+
+![接缝校正后的 L0 视图](docs/screenshots/11-seam-corrected.png)
+
+*L0 / 206% / 0.274 µm/px：两条横向拼接裂缝消失，状态栏显示「已校正 42 处」。*
+
 ---
 
 ## 4. 架构
@@ -180,6 +203,9 @@ repeat tile_count:
 | `save_export(path, bytes)` | 导出 PNG 落盘（base64 传输，用户选择路径） |
 | `load_annotations` / `save_annotations` | 标注读写（应用数据目录 `annotations.json`，写入前 JSON 校验） |
 | `load_settings` / `save_settings` | 设置读写（应用数据目录 `settings.json`） |
+| `seam_config` / `seam_save_config` | 接缝表读写（`seams.json`，按切片 id 一份 L0 表） |
+| `seam_detect` / `seam_measure` | 后台测量照片边界 / 单条边界探测 |
+| `shade_calibrate` | 逐瓦片曝光对齐（默认关闭） |
 
 渲染器要点（`src/components/ViewerCanvas.tsx`，双 canvas：瓦片层 + 标注 overlay 层）：
 
@@ -187,13 +213,15 @@ repeat tile_count:
 - 目标层瓦片未到位时回退绘制已缓存的粗层祖先（低清先出，不闪空白格）；缺失瓦片以画布底色填充，不闪白；
 - 预取：视口外扩 2 片，同时保持 k+2 粗层热备；
 - `requestAnimationFrame` + 脏标记驱动，静止不重绘，单帧绘制异常不中断渲染循环；
-- backing store 按 `devicePixelRatio` 放大（上限 2.5），高 DPI 不发虚；瓦片边缘坐标取整对齐，消除接缝；
+- backing store 按 `devicePixelRatio` 放大（上限 2.5），高 DPI 不发虚；瓦片按精确浮点边界拆成多段绘制、跳过照片重复带（见 3.5）；
 - 缩放锚点跟随鼠标位置（滚轮 / 双击均如此）。
 
 ---
 
 ## 5. 功能清单
 
+- **接缝自动校正**：打开即出图，后台测量照片边界并原地应用；状态栏 chip 显示进度与结果，配置按切片保存可复用
+- **画质三档**：标准 / 高清（默认）/ 极清，控制选层超采样倍率
 - **病例列表**：缩略图 + 名称，关键字搜索，按部位标签页与牙位（G1–G8）下拉筛选；
 - **查看器**：滚轮 / 双击缩放（鼠标为锚点）、拖拽平移、自动切层、切层无跳变（低清先出）；
 - **导航小地图**：右下角全片缩略 + 视野框，点击跳转；
@@ -220,7 +248,8 @@ repeat tile_count:
 | `0` | 适应窗口（回到整片视野） |
 | `F` | 全屏切换 |
 | `M` | 进入 / 退出测距模式 |
-| `T` | 切换浅色 / 深色主题 |
+| `T` | 文字标注工具 |
+| — | 主题切换：标题栏右侧按钮或设置面板 |
 | `Esc` | 取消（框选、文字输入、测量进行中、设置面板，回到平移工具） |
 | `Delete` / `Backspace` | 撤销上一条标注 |
 
@@ -258,7 +287,8 @@ tt-slideviewer/
 │  │     OriginDropdown / PressButton / StretchSwitch / VelocityToast
 │  ├─ hooks/useSlide.ts         # 病例列表 / 切片信息 / 标注持久化（防抖保存）
 │  ├─ lib/
-│  │  ├─ coords.ts              # 层级选择与坐标换算（全部收敛在此）
+│  │  ├─ seam.ts                # 接缝几何：L0 边界 → 多段裁切
+│  ├─ coords.ts              # 层级选择与坐标换算（全部收敛在此）
 │  │  ├─ ipc.ts                 # invoke 封装 + 二进制帧解析
 │  │  ├─ tileCache.ts           # ImageBitmap LRU 缓存
 │  │  ├─ theme.ts               # 浅/深/跟随系统主题
@@ -273,6 +303,7 @@ tt-slideviewer/
    ├─ examples/                 # 数据完整性校验 / 缩略图调试 CLI
    └─ src/
       ├─ main.rs / lib.rs       # 入口、插件注册、命令表
+      ├─ seam.rs                # 照片边界检测（结构驱动）
       ├─ index.rs               # Index.dat 解析（层级推断、坐标解码、SOI 探针）
       ├─ slide.rs               # 切片抽象：句柄懒开、EOI 截断读取、缩略图合成
       └─ commands.rs            # IPC 命令
@@ -297,7 +328,7 @@ tt-slideviewer/
 
 ## 隐私声明
 
-本仓库不含任何患者数据；README 截图均摄自匿名化演示目录，未提交任何临床信息或真实切片命名。
+本仓库不含任何患者数据。README 截图中的病例名已统一替换为 `3 · G3 Palate` 这类匿名编号格式，未提交任何临床信息、患者姓名或原始切片命名。
 
 ## 许可证
 
